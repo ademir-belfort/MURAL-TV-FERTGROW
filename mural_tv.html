@@ -164,8 +164,8 @@
             ${esc(f.nome)}
             ${lider ? `<span class="badge" style="font-size:${big?'10px':'8.5px'};background:rgba(251,191,36,.18);color:var(--amber)">👑 Líder</span>` : ""}
             ${ausente ? `<span class="badge" style="font-size:${big?'10px':'8.5px'};background:rgba(244,63,94,.18);color:var(--rose)">AUSENTE</span>` : ""}
-            ${!ausente && ocioso ? `<span class="badge" style="font-size:${big?'10px':'8.5px'};background:rgba(244,63,94,.18);color:var(--rose)">OCIOSO</span>` : ""}
-            ${!ausente && naoComecouAinda ? `<span class="badge" style="font-size:${big?'10px':'8.5px'};background:rgba(244,63,94,.18);color:var(--rose)">turno às ${esc((f.turnoInicio||"").slice(0,5))}</span>` : ""}
+            ${!ausente && ocioso ? `<span class="badge" style="font-size:${big?'10px':'8.5px'};background:rgba(251,191,36,.18);color:var(--amber)">OCIOSO</span>` : ""}
+            ${!ausente && naoComecouAinda ? `<span class="badge" style="font-size:${big?'10px':'8.5px'};background:rgba(255,255,255,.06);color:var(--muted)">turno às ${esc((f.turnoInicio||"").slice(0,5))}</span>` : ""}
           </div>
           <div style="flex:1;position:relative;height:${rowH}px;background:var(--surface2);border-radius:5px">${segmentsHTML}</div>
         </div>
@@ -188,7 +188,7 @@
       if(pct==null || pct<0 || pct>100) return "";
       const leftCalc = `calc(${nameW}px + (100% - ${nameW}px) * ${(pct/100).toFixed(4)})`;
       return `<div style="position:absolute;left:${leftCalc};top:0;bottom:0;width:0;border-left:2px dashed var(--brand-light);z-index:2;pointer-events:none">
-        <div style="position:absolute;top:-2px;left:4px;font-size:${big?'11px':'9px'};font-weight:800;color:var(--brand-light);white-space:nowrap">AGORA ${String(agora.getUTCHours()).padStart(2,"0")}:${String(agora.getUTCMinutes()).padStart(2,"0")}</div>
+        <div style="position:absolute;top:${big?'-24px':'-18px'};left:4px;font-size:${big?'11px':'9px'};font-weight:800;color:var(--brand-light);white-space:nowrap">AGORA ${String(agora.getUTCHours()).padStart(2,"0")}:${String(agora.getUTCMinutes()).padStart(2,"0")}</div>
       </div>`;
     })() : "";
     return `
@@ -221,7 +221,7 @@
         <div class="row-flex" style="gap:5px"><div style="width:10px;height:10px;border-radius:3px;background:repeating-linear-gradient(45deg,rgba(241,109,109,.14),rgba(241,109,109,.14) 4px,rgba(241,109,109,.04) 4px,rgba(241,109,109,.04) 8px)"></div>Lacuna sem OS</div>
         <div class="row-flex" style="gap:5px"><span style="font-size:9.5px;padding:2px 7px;border-radius:20px;background:rgba(34,211,238,.14);color:var(--cyan);border:1px solid rgba(34,211,238,.35)">📋 OS</span>Prevista pra hoje, ainda sem apontamento</div>
         <div class="row-flex" style="gap:5px"><span style="font-size:9.5px;padding:2px 7px;border-radius:20px;background:rgba(251,113,133,.18);color:var(--rose);border:1px solid rgba(251,113,133,.35)">OS</span>Atrasada (de dia(s) anterior(es))</div>
-        <div class="row-flex" style="gap:5px"><span class="badge" style="font-size:9.5px;background:rgba(244,63,94,.18);color:var(--rose)">OCIOSO</span>Escalado, turno já começou, sem nenhuma OS</div>
+        <div class="row-flex" style="gap:5px"><span class="badge" style="font-size:9.5px;background:rgba(251,191,36,.18);color:var(--amber)">OCIOSO</span>Escalado, turno já começou, sem nenhuma OS</div>
         <div class="row-flex" style="gap:5px"><span class="badge" style="font-size:9.5px;background:rgba(244,63,94,.18);color:var(--rose)">AUSENTE</span>Falta lançada na frequência do dia</div>
         <div class="row-flex" style="gap:5px"><span class="badge" style="font-size:9.5px;background:rgba(251,191,36,.18);color:var(--amber)">👑 Líder</span>Líder de equipe (nunca aparece como ocioso)</div>
       </div>
@@ -421,6 +421,12 @@
         slideIdx = (slideIdx+1) % dayData.oficinas.length;
         slideSecondsLeft = SLIDE_SECONDS;
         needRepaint = true;
+        // Voltou pro primeiro setor -- terminou de passar por todos. Avisa quem estiver mostrando essa
+        // página dentro de um iframe (o painel giratório da TV, ver kiosk.html) pra poder trocar de
+        // tela só depois do ciclo completo, em vez de um tempo fixo que podia cortar no meio de um setor.
+        if(slideIdx === 0 && window.parent !== window){
+          try{ window.parent.postMessage({ source:"mural-tv", type:"cycle-complete" }, "*"); }catch(e){}
+        }
       }
     }
     // Virou o dia de verdade (TV ligada passando da meia-noite) -- acompanha sozinho, sem precisar

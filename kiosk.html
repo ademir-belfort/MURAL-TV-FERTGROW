@@ -18,13 +18,24 @@
   // -- essa página só fica abrindo um dentro do outro (iframe) e trocando sozinha, sem mexer em nada
   // dos sites em si. Pra adicionar, tirar ou mudar o tempo de uma tela, edita a lista abaixo e sobe o
   // arquivo de novo no GitHub.
+  // "waitForCycle: true" (hoje só o Mural de HH) -- em vez de um tempo fixo, espera a própria tela
+  // avisar (via postMessage, ver o "AGORA ... window.parent.postMessage" dentro de mural_tv.html) que
+  // já passou por todos os setores dela uma vez, e só troca depois disso -- pedido explícito do
+  // usuário ("acabar de passar os meus 7 slide, passa o dele, aí volta pro meu"). "maxSeconds" é só uma
+  // trava de segurança (ex: dia sem nenhuma OS, a tela nunca entra em modo slide pra avisar nada) --
+  // sem isso, um problema na tela do Mural travaria o painel giratório nela pra sempre.
   const SCREENS = [
-    { label: "Mural de HH", url: "https://ademir-belfort.github.io/MURAL-TV-FERTGROW/mural_tv.html", seconds: 120 },
+    { label: "Mural de HH", url: "https://ademir-belfort.github.io/MURAL-TV-FERTGROW/mural_tv.html", waitForCycle: true, maxSeconds: 900 },
     { label: "Painel PCM", url: "https://itaneladm2011.github.io/Mural_TV/mural_tv_pcm.html", seconds: 120 },
   ];
 
   let idx = 0;
+  let advanceTimer = null;
+  let awaitingCycle = false;
+
   function show(){
+    if(advanceTimer){ clearTimeout(advanceTimer); advanceTimer = null; }
+    awaitingCycle = false;
     const validas = SCREENS.filter(s => /^https?:\/\//.test(s.url));
     if(!validas.length){
       document.getElementById("frame").style.display = "none";
@@ -35,8 +46,18 @@
     document.getElementById("frame").src = s.url;
     document.title = s.label;
     idx++;
-    setTimeout(show, s.seconds*1000);
+    if(s.waitForCycle){
+      awaitingCycle = true;
+      advanceTimer = setTimeout(show, (s.maxSeconds||600)*1000);
+    } else {
+      advanceTimer = setTimeout(show, (s.seconds||120)*1000);
+    }
   }
+
+  window.addEventListener("message", (ev) => {
+    if(awaitingCycle && ev && ev.data && ev.data.source==="mural-tv" && ev.data.type==="cycle-complete") show();
+  });
+
   show();
 </script>
 </body>
