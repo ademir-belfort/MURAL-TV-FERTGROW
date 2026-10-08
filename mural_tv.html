@@ -30,10 +30,6 @@
   .modal{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:18px;width:90%;}
   .modal-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;}
   .modal-head h3{margin:0;font-size:16px;}
-  .pcm-kpi-tile{flex:1;min-width:190px;padding:16px 20px;}
-  .pcm-kpi-label{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;font-weight:700;}
-  .pcm-kpi-value{font-size:30px;font-weight:800;margin-top:6px;}
-  .pcm-kpi-sub{font-size:11.5px;color:var(--muted);margin-top:4px;}
 </style>
 </head>
 <body>
@@ -41,39 +37,31 @@
 <div id="modalRoot"></div>
 <script>
   // ---------------------------------------------------------------------------------------------
-  // Mural de HH + indicadores do Painel PCM, numa TV só. Base copiada de mural_tv.html (mesmo motor
-  // de slides, mesmas variáveis de cor/layout) -- o mural_tv.html original NÃO foi alterado, ficou só
-  // como referência; tudo daqui pra frente roda neste arquivo novo.
-  //
-  // Dois Supabase diferentes, cada um com sua própria chave pública (anon) -- não precisam estar
-  // "conectados" entre si, são só duas chamadas HTTP independentes a partir do navegador:
-  //   - Mural (dados de apontamento de HH, já existia): projeto eusvotyusfwxolczqzlc.
-  //   - Painel PCM (Disponibilidade / Programação / Custos, novo): projeto eqrzwybphzypdllywvbl,
-  //     via a Edge Function pública "mural-indicadores-pcm", que só LÊ os dados que o painel admin
-  //     (index.html) já sincroniza na tabela app_state -- não refaz a busca no Melvin/Evocon, não
-  //     expõe a tabela em si (fica protegida por RLS igual sempre esteve), só devolve um resumo já
-  //     calculado com a mesma fórmula usada no Painel Geral do admin.
+  // Mural de HH — página sozinha, pensada pra abrir direto na TV (sem precisar do computador ligado
+  // ou do painel admin aberto). Mesma chave pública (anon, "sb_publishable_...") já usada no Portal
+  // do Colaborador e no Portal do Gestor -- não é segredo, só destranca a chamada da Edge Function.
+  // Todo o desenho (Gantt, slides, legenda, ajuste de tela) foi copiado do painel admin-desktop
+  // (sistema_gestao_projetos (16).html, função openMuralPresentationModal e redondezas) -- se mexer
+  // num lugar, lembrar de mexer no outro também (ou, melhor ainda, puxar os dois de um arquivo JS
+  // compartilhado no futuro).
   // ---------------------------------------------------------------------------------------------
   const SUPABASE_URL = "https://eusvotyusfwxolczqzlc.supabase.co";
   const SUPABASE_ANON_KEY = "sb_publishable_2Uee6RYvUtvR5m4Vy6yyDQ_fgEeGEsX";
 
-  const SUPABASE_URL_PCM = "https://eqrzwybphzypdllywvbl.supabase.co";
-  const SUPABASE_ANON_KEY_PCM = "sb_publishable_cfftCeIOUM1xcQ_BD_0MnA_ZE4tmLVs";
-
   const $ = (sel, root=document) => root.querySelector(sel);
   const $$ = (sel, root=document) => Array.from(root.querySelectorAll(sel));
   const esc = (s) => String(s==null?"":s).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
-  const todayISO = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`; };
-  function addDays(iso,n){ const d=new Date(iso); d.setDate(d.getDate()+n); return toISO(d); }
+  // Smart TV costuma vir com o fuso horário mal configurado de fábrica (ou direto em UTC) -- confiar no
+  // relógio/fuso do próprio aparelho (new Date().getHours() etc.) mostrava hora errada. Em vez disso,
+  // pega só o instante (que normalmente está certo, sincronizado pela internet) e desloca manualmente
+  // pro horário de Brasília (UTC-3, sem horário de verão desde 2019) -- mesma conta que a Edge Function
+  // já faz do lado do servidor. Funciona não importa o fuso que a TV estiver configurada.
+  function agoraBrasilia(){ return new Date(Date.now() - 3*3600000); }
+  function horaBrasiliaStr(d){ d = d || agoraBrasilia(); return `${String(d.getUTCHours()).padStart(2,"0")}:${String(d.getUTCMinutes()).padStart(2,"0")}:${String(d.getUTCSeconds()).padStart(2,"0")}`; }
+  const todayISO = () => { const d = agoraBrasilia(); return `${d.getUTCFullYear()}-${String(d.getUTCMonth()+1).padStart(2,"0")}-${String(d.getUTCDate()).padStart(2,"0")}`; };
+  function addDays(iso,n){ const d=new Date(iso+"T00:00:00Z"); d.setUTCDate(d.getUTCDate()+n); return toISO(d); }
   function toISO(d){ if(!d) return ""; return d.toISOString().slice(0,10); }
   function brDate(iso){ if(!iso) return "—"; const [y,m,d]=iso.split("-"); return `${d}/${m}/${y}`; }
-
-  // formatação idêntica ao index.html (mesma fonte dos números) -- pra número bater igual no admin e na TV
-  const fmtBRL = (v) => (v ?? 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL", maximumFractionDigits: 0 });
-  const fmtPct = (v) => `${(v ?? 0).toLocaleString("pt-BR", { maximumFractionDigits: 1 })}%`;
-  function fmtHM(v){ v = v ?? 0; const sign = v<0?"-":""; v=Math.abs(v); const h=Math.floor(v), m=Math.round((v-h)*60); return `${sign}${h}:${String(m).padStart(2,"0")}`; }
-  function fmtDaysSigned(v){ v = v ?? 0; const sign = v>0?"+":""; return `${sign}${v.toLocaleString("pt-BR",{maximumFractionDigits:1,minimumFractionDigits:1})} dia(s)`; }
-  function fmtDaysPlain(v){ v = v ?? 0; return `${v.toLocaleString("pt-BR",{maximumFractionDigits:1,minimumFractionDigits:1})} dia(s)`; }
 
   async function fetchMuralDia(date){
     const resp = await fetch(`${SUPABASE_URL}/functions/v1/melvin-mural-dia`, {
@@ -83,15 +71,6 @@
     });
     const result = await resp.json();
     if(!resp.ok || result.error) throw new Error(result.error || `HTTP ${resp.status}`);
-    return result;
-  }
-
-  async function fetchPcmIndicadores(){
-    const resp = await fetch(`${SUPABASE_URL_PCM}/functions/v1/mural-indicadores-pcm`, {
-      headers: { "Authorization": `Bearer ${SUPABASE_ANON_KEY_PCM}`, "apikey": SUPABASE_ANON_KEY_PCM },
-    });
-    const result = await resp.json();
-    if(!resp.ok || result.error || !result.ok) throw new Error(result.error || `HTTP ${resp.status}`);
     return result;
   }
 
@@ -199,15 +178,15 @@
     const nameW = big ? 240 : 170;
     const hoursHeader = [];
     for(let h=MURAL_HORA_INICIO; h<MURAL_HORA_FIM; h++) hoursHeader.push(`<div style="flex:1;font-size:${hourFont};color:var(--muted);text-align:left">${String(h).padStart(2,"0")}h</div>`);
-    const agora = new Date();
+    const agora = agoraBrasilia();
     const souHoje = data.data === todayISO();
-    const agoraHMS = souHoje ? `${String(agora.getHours()).padStart(2,"0")}:${String(agora.getMinutes()).padStart(2,"0")}:00` : null;
+    const agoraHMS = souHoje ? `${String(agora.getUTCHours()).padStart(2,"0")}:${String(agora.getUTCMinutes()).padStart(2,"0")}:00` : null;
     const agoraLine = souHoje ? (() => {
-      const pct = muralTimeToPct(`${String(agora.getHours()).padStart(2,"0")}:${String(agora.getMinutes()).padStart(2,"0")}:00`);
+      const pct = muralTimeToPct(`${String(agora.getUTCHours()).padStart(2,"0")}:${String(agora.getUTCMinutes()).padStart(2,"0")}:00`);
       if(pct==null || pct<0 || pct>100) return "";
       const leftCalc = `calc(${nameW}px + (100% - ${nameW}px) * ${(pct/100).toFixed(4)})`;
       return `<div style="position:absolute;left:${leftCalc};top:0;bottom:0;width:0;border-left:2px dashed var(--brand-light);z-index:2;pointer-events:none">
-        <div style="position:absolute;top:-2px;left:4px;font-size:${big?'11px':'9px'};font-weight:800;color:var(--brand-light);white-space:nowrap">AGORA ${String(agora.getHours()).padStart(2,"0")}:${String(agora.getMinutes()).padStart(2,"0")}</div>
+        <div style="position:absolute;top:-2px;left:4px;font-size:${big?'11px':'9px'};font-weight:800;color:var(--brand-light);white-space:nowrap">AGORA ${String(agora.getUTCHours()).padStart(2,"0")}:${String(agora.getUTCMinutes()).padStart(2,"0")}</div>
       </div>`;
     })() : "";
     return `
@@ -265,160 +244,45 @@
   }
 
   // ---------------------------------------------------------------------------------------------
-  // Slides de indicadores do Painel PCM -- mesmo vocabulário visual do mural (.card, var(--emerald)/
-  // var(--rose)/var(--amber), barras arredondadas), só que montados em HTML/CSS puro (sem SVG) porque
-  // o motor de gráfico do painel admin depende de muitas funções internas daquele arquivo que não dá
-  // pra reaproveitar aqui sem duplicar o arquivo inteiro.
+  // Controlador da tela inteira -- diferente do modal do painel admin, essa página NÃO tem "Fechar"
+  // (é a única coisa que existe aqui) e acompanha o dia de hoje sozinha: se passar da meia-noite com
+  // a TV ligada, troca pro novo dia automaticamente sem precisar de ninguém mexer em nada. Só para de
+  // seguir "hoje" se alguém usar as setinhas pra olhar outro dia -- aí fica lá até clicar "Hoje" nenhum.
   // ---------------------------------------------------------------------------------------------
-  function pcmKpiTileHTML(label, value, sub, color){
-    return `
-      <div class="card pcm-kpi-tile">
-        <div class="pcm-kpi-label">${esc(label)}</div>
-        <div class="pcm-kpi-value" style="color:${color||'var(--text)'}">${value}</div>
-        ${sub ? `<div class="pcm-kpi-sub">${sub}</div>` : ""}
-      </div>`;
-  }
-  function pcmKpiRowHTML(tiles){
-    return `<div class="row-flex" style="gap:14px;flex-wrap:wrap;margin-bottom:18px">${tiles.join("")}</div>`;
-  }
-  function pcmBarRowHTML(label, pct, valueText, barColor){
-    const safePct = Math.max(0, Math.min(100, pct));
-    return `
-      <div style="padding:7px 0">
-        <div class="row-flex" style="gap:14px;align-items:center">
-          <div style="width:150px;flex:0 0 auto;font-size:15px;font-weight:700">${esc(label)}</div>
-          <div style="flex:1;position:relative;height:24px;background:var(--surface2);border-radius:6px">
-            <div style="position:absolute;left:0;top:0;bottom:0;width:${safePct}%;background:${barColor};border-radius:6px"></div>
-          </div>
-          <div style="width:80px;text-align:right;font-size:15px;font-weight:800;color:${barColor}">${esc(valueText)}</div>
-        </div>
-      </div>`;
-  }
-  function pcmMonthBarsHTML(months, valueKey, fmtFn, barColor, maxOverride){
-    const maxValue = maxOverride || Math.max(1, ...months.map(m => m[valueKey] || 0));
-    return `
-      <div class="row-flex" style="align-items:flex-end;gap:16px;height:150px;margin-top:4px;padding:0 4px">
-        ${months.map(m => {
-          const v = m[valueKey] || 0;
-          const h = Math.max(4, (v / maxValue) * 118);
-          return `
-            <div style="display:flex;flex-direction:column;align-items:center;gap:6px;flex:1;min-width:0">
-              <div style="font-size:12px;font-weight:700;color:${barColor};white-space:nowrap">${fmtFn(v)}</div>
-              <div style="width:100%;max-width:52px;height:${h}px;background:${barColor};border-radius:5px 5px 0 0"></div>
-              <div style="font-size:11.5px;color:var(--muted)">${esc(m.label)}</div>
-            </div>`;
-        }).join("")}
-      </div>`;
-  }
-  function pcmDisponibilidadeSlideHTML(d){
-    const tiles = [
-      pcmKpiTileHTML("Disponibilidade geral", fmtPct(d.disponibilidade), `base: ${d.days} dia(s) × 16h`, "var(--emerald)"),
-      pcmKpiTileHTML("Horas de falha", fmtHM(d.totalHours), `${d.count} registro(s) no período`, "var(--rose)"),
-      pcmKpiTileHTML("Falhas acima do gatilho", String(d.falhasAcimaGatilho), "dia(s) com ≥ 3h no período", "var(--amber)"),
-    ];
-    const plantas = [...d.plantas].sort((a,b) => b.disponibilidade - a.disponibilidade);
-    const barras = plantas.map(p => {
-      const color = p.disponibilidade >= 95 ? "var(--emerald)" : (p.disponibilidade >= 85 ? "var(--amber)" : "var(--rose)");
-      return pcmBarRowHTML(p.planta, p.disponibilidade, fmtPct(p.disponibilidade), color);
-    }).join("");
-    return `
-      <div class="card">
-        ${pcmKpiRowHTML(tiles)}
-        <div style="font-size:12.5px;font-weight:800;text-transform:uppercase;letter-spacing:.04em;color:var(--brand-light);padding:4px 0 6px;border-top:1px solid var(--border)">Disponibilidade por planta</div>
-        ${barras}
-      </div>`;
-  }
-  function pcmProgramacaoSlideHTML(p){
-    const tiles = [
-      pcmKpiTileHTML("Aderência à programação", fmtPct(p.aderencia), `${p.executadasNoPrazo} de ${p.programadas} no prazo`, "var(--emerald)"),
-      pcmKpiTileHTML("Fora de programação", String(p.foraDeProgramacao), `${fmtPct(p.pctForaDeProgramacao)} das programadas`, "var(--rose)"),
-      pcmKpiTileHTML("Desvio prog. × execução", fmtDaysSigned(p.desvioMedioDias), `média entre ${p.desvioCount} ordem(ns) fora do prazo`, "var(--amber)"),
-      pcmKpiTileHTML("Tempo médio de baixa", fmtDaysPlain(p.tempoMedioBaixaDias), "entre execução e encerramento", "var(--cyan)"),
-    ];
-    return `
-      <div class="card">
-        ${pcmKpiRowHTML(tiles)}
-        <div style="font-size:12.5px;font-weight:800;text-transform:uppercase;letter-spacing:.04em;color:var(--brand-light);padding:4px 0 6px;border-top:1px solid var(--border)">Aderência mensal (ciclo)</div>
-        ${pcmMonthBarsHTML(p.series, "aderencia", fmtPct, "var(--emerald)", 100)}
-      </div>`;
-  }
-  function pcmCustosSlideHTML(c){
-    const tiles = [
-      pcmKpiTileHTML("Orçado", fmtBRL(c.ciclo.orcado), "previsto no ciclo", "var(--cyan)"),
-      pcmKpiTileHTML("Realizado", fmtBRL(c.ciclo.realizado), "executado até o momento", "var(--emerald)"),
-      pcmKpiTileHTML("Saldo remanescente", fmtBRL(c.ciclo.saldo), c.ciclo.saldo<0 ? "orçamento estourado" : "disponível a executar", c.ciclo.saldo<0 ? "var(--rose)" : "var(--brand-light)"),
-      pcmKpiTileHTML("Aderência", fmtPct(c.aderencia), "realizado ÷ orçado", "var(--amber)"),
-    ];
-    const maxValue = Math.max(1, ...c.months.map(m => Math.max(m.orcado||0, m.realizado||0)));
-    return `
-      <div class="card">
-        ${pcmKpiRowHTML(tiles)}
-        <div style="font-size:12.5px;font-weight:800;text-transform:uppercase;letter-spacing:.04em;color:var(--brand-light);padding:4px 0 6px;border-top:1px solid var(--border)">Realizado por mês</div>
-        ${pcmMonthBarsHTML(c.months, "realizado", fmtBRL, "var(--emerald)", maxValue)}
-      </div>`;
-  }
-  const PCM_SLIDE_LABEL = {
-    disponibilidade: "Disponibilidade de Equipamentos",
-    programacao: "Aderência à Programação",
-    custos: "Custos Orçado × Realizado",
-  };
-  function pcmSlideHTML(type, pcmData){
-    if(type === "disponibilidade") return pcmDisponibilidadeSlideHTML(pcmData.disponibilidade);
-    if(type === "programacao") return pcmProgramacaoSlideHTML(pcmData.programacao);
-    if(type === "custos") return pcmCustosSlideHTML(pcmData.custos);
-    return "";
-  }
-
-  // ---------------------------------------------------------------------------------------------
-  // Controlador da tela inteira -- motor de slides único, alternando entre as oficinas do Mural de
-  // HH e os slides de indicadores do PCM. Sem "Fechar" (é a única coisa que existe aqui); acompanha
-  // o dia de hoje sozinho (vira a meia-noite com a TV ligada, troca de dia sem precisar de ninguém).
-  // ---------------------------------------------------------------------------------------------
-  const RATE_OPTIONS = [30, 60, 120, 300];
+  // O próprio Melvin confirmou: pode consultar no máximo a cada 30min -- nunca oferece nada mais
+  // rápido que isso, pra não arriscar tomar bloqueio de novo (já aconteceu uma vez por volume alto).
+  const RATE_OPTIONS = [1800, 3600, 7200];
   const SLIDE_OPTIONS = [8, 12, 20, 30];
   let date = todayISO();
   let followingToday = true;
   let dayData = null;
-  let pcmData = null;
-  let REFRESH_SECONDS = 60, secondsLeft = REFRESH_SECONDS;
+  let REFRESH_SECONDS = 1800, secondsLeft = REFRESH_SECONDS;
   let slideMode = true, SLIDE_SECONDS = 12, slideSecondsLeft = SLIDE_SECONDS, slideIdx = 0;
   let ticker = null;
 
-  function rateOptionsHTML(){
-    return RATE_OPTIONS.map(s => `<option value="${s}" ${s===REFRESH_SECONDS?"selected":""}>${s<60 ? s+"s" : (s/60)+"min"}</option>`).join("");
+  function rateLabel(s){
+    if(s<60) return s+"s";
+    if(s<3600) return (s/60)+"min";
+    return (s/3600)+"h";
   }
+  function rateOptionsHTML(){
+    return RATE_OPTIONS.map(s => `<option value="${s}" ${s===REFRESH_SECONDS?"selected":""}>${rateLabel(s)}</option>`).join("");
+  }
+  function horaBrasiliaHM(d){ return horaBrasiliaStr(d).slice(0,5); }
   function slideRateOptionsHTML(){
     return SLIDE_OPTIONS.map(s => `<option value="${s}" ${s===SLIDE_SECONDS?"selected":""}>${s}s</option>`).join("");
   }
 
-  // monta a lista única de slides: 1 por oficina do dia + 1 por indicador do PCM disponível
-  function buildSlideDeck(){
-    const oficinas = (dayData && dayData.oficinas) || [];
-    const deck = oficinas.map(o => ({ kind: "oficina", label: o.setor, oficina: o }));
-    if(pcmData && pcmData.disponibilidade) deck.push({ kind: "pcm", type: "disponibilidade", label: PCM_SLIDE_LABEL.disponibilidade });
-    if(pcmData && pcmData.programacao) deck.push({ kind: "pcm", type: "programacao", label: PCM_SLIDE_LABEL.programacao });
-    if(pcmData && pcmData.custos) deck.push({ kind: "pcm", type: "custos", label: PCM_SLIDE_LABEL.custos });
-    return deck;
-  }
-
   function paint(){
     const dateLabel = new Date(date+"T00:00:00").toLocaleDateString("pt-BR",{weekday:"long", day:"2-digit", month:"long", year:"numeric"});
-    const deck = buildSlideDeck();
-    if(slideIdx >= deck.length) slideIdx = 0;
-    const showingSlide = slideMode && deck.length>0;
-    const current = showingSlide ? deck[slideIdx] : null;
-    const dotsHTML = showingSlide && deck.length>1 ? `
+    const oficinas = (dayData && dayData.oficinas) || [];
+    if(slideIdx >= oficinas.length) slideIdx = 0;
+    const showingSlide = slideMode && oficinas.length>0;
+    const slideGroups = showingSlide ? [oficinas[slideIdx]] : null;
+    const dotsHTML = showingSlide && oficinas.length>1 ? `
       <div class="row-flex" style="justify-content:center;gap:6px;margin-bottom:12px">
-        ${deck.map((s,i)=>`<div title="${esc(s.label)}" style="width:${i===slideIdx?'22px':'8px'};height:8px;border-radius:4px;background:${i===slideIdx?'var(--brand-light)':'var(--border)'}"></div>`).join("")}
+        ${oficinas.map((o,i)=>`<div title="${esc(o.setor)}" style="width:${i===slideIdx?'22px':'8px'};height:8px;border-radius:4px;background:${i===slideIdx?'var(--brand-light)':'var(--border)'}"></div>`).join("")}
       </div>` : "";
-    let bodyHTML;
-    if(!current){
-      bodyHTML = `<div class="empty"><h3>Nenhuma OS com apontamento nesse dia e nenhum indicador do PCM disponível</h3></div>`;
-    } else if(current.kind === "oficina"){
-      bodyHTML = `<div class="card">${muralOficinasHTML(dayData,true,[current.oficina])}</div>${muralOSLegendHTML(current.oficina)}${muralLegendaHTML()}`;
-    } else {
-      bodyHTML = pcmSlideHTML(current.type, pcmData);
-    }
     $("#root").innerHTML = `
       <div id="muralPresentationOuter" style="position:fixed;inset:0;background:var(--bg);overflow:auto;padding:28px 36px">
         <div id="muralPresentationInner" style="max-width:1700px;margin:0 auto">
@@ -431,29 +295,33 @@
                 <button class="btn ghost icon-only small" id="nextDayBtn" type="button" title="Dia seguinte">›</button>
                 ${!followingToday ? `<button class="btn small" id="todayBtn" type="button" style="width:auto">🏠 Hoje</button>` : ""}
               </div>
-              ${current ? `<div style="font-size:14px;color:var(--brand-light);font-weight:700;margin-top:4px">Slide ${slideIdx+1} de ${deck.length} — ${esc(current.label)}</div>` : ""}
+              ${showingSlide ? `<div style="font-size:14px;color:var(--brand-light);font-weight:700;margin-top:4px">Setor ${slideIdx+1} de ${oficinas.length} — ${esc(oficinas[slideIdx].setor)}</div>` : ""}
             </div>
             <div class="row-flex" style="gap:16px;align-items:center;flex-wrap:wrap;justify-content:flex-end">
-              <div id="muralLiveClock" style="font-size:22px;font-weight:800;font-variant-numeric:tabular-nums;color:var(--text)">${esc(new Date().toLocaleTimeString("pt-BR"))}</div>
+              <div id="muralLiveClock" style="font-size:22px;font-weight:800;font-variant-numeric:tabular-nums;color:var(--text)">${esc(horaBrasiliaStr())}</div>
               <label class="row-flex" style="gap:6px;align-items:center;font-size:11.5px;color:var(--muted);cursor:pointer">
-                <input type="checkbox" id="muralSlideToggle" ${slideMode?"checked":""} /> Slides
+                <input type="checkbox" id="muralSlideToggle" ${slideMode?"checked":""} /> Slides por setor
               </label>
               ${slideMode ? `
               <div class="row-flex" style="gap:6px;align-items:center">
-                <button class="btn ghost icon-only small" id="muralSlidePrevBtn" type="button" title="Slide anterior">‹</button>
-                <select id="muralSlideRate" title="Troca de slide a cada">${slideRateOptionsHTML()}</select>
-                <button class="btn ghost icon-only small" id="muralSlideNextBtn" type="button" title="Próximo slide">›</button>
+                <button class="btn ghost icon-only small" id="muralSlidePrevBtn" type="button" title="Setor anterior">‹</button>
+                <select id="muralSlideRate" title="Troca de setor a cada">${slideRateOptionsHTML()}</select>
+                <button class="btn ghost icon-only small" id="muralSlideNextBtn" type="button" title="Próximo setor">›</button>
               </div>` : ""}
               <div class="row-flex" style="gap:8px;align-items:center">
                 <label for="muralRefreshRate" style="font-size:11.5px;color:var(--muted)">Atualiza a cada</label>
                 <select id="muralRefreshRate">${rateOptionsHTML()}</select>
               </div>
-              <div style="font-size:12.5px;color:var(--muted)">🔄 próxima em <span id="muralCountdown" style="color:var(--brand-light);font-weight:700">${secondsLeft}</span>s</div>
+              <div style="font-size:11.5px;color:var(--muted);text-align:right;line-height:1.5">
+                <div>Dados de: <b style="color:var(--text)">${lastRefreshAt ? esc(horaBrasiliaHM(lastRefreshAt)) : "—"}</b></div>
+                <div>Próxima busca: <b style="color:var(--brand-light)">${esc(horaBrasiliaHM(new Date(agoraBrasilia().getTime() + Math.max(0,secondsLeft)*1000)))}</b></div>
+              </div>
             </div>
           </div>
           ${dotsHTML}
-          ${bodyHTML}
-          <p style="font-size:10.5px;color:var(--muted);margin-top:20px;text-align:center">Atualizado às ${esc(new Date().toLocaleTimeString("pt-BR"))}</p>
+          ${!dayData || !oficinas.length
+            ? `<div class="empty"><h3>Nenhuma OS com apontamento nesse dia</h3></div>`
+            : `<div class="card">${muralOficinasHTML(dayData,true,slideGroups)}</div>${showingSlide ? muralOSLegendHTML(oficinas[slideIdx]) : ""}${muralLegendaHTML()}`}
         </div>
       </div>
     `;
@@ -462,7 +330,7 @@
     const todayBtn = $("#todayBtn");
     if(todayBtn) todayBtn.addEventListener("click", () => { followingToday = true; date = todayISO(); refresh(); });
     $("#muralRefreshRate").addEventListener("change", e => {
-      REFRESH_SECONDS = Number(e.target.value) || 60;
+      REFRESH_SECONDS = Number(e.target.value) || 1800;
       secondsLeft = REFRESH_SECONDS;
     });
     $("#muralSlideToggle").addEventListener("change", e => {
@@ -478,7 +346,7 @@
     });
     const slidePrevBtn = $("#muralSlidePrevBtn");
     if(slidePrevBtn) slidePrevBtn.addEventListener("click", () => {
-      const n = buildSlideDeck().length;
+      const n = ((dayData && dayData.oficinas)||[]).length;
       if(!n) return;
       slideIdx = (slideIdx - 1 + n) % n;
       slideSecondsLeft = SLIDE_SECONDS;
@@ -486,7 +354,7 @@
     });
     const slideNextBtn = $("#muralSlideNextBtn");
     if(slideNextBtn) slideNextBtn.addEventListener("click", () => {
-      const n = buildSlideDeck().length;
+      const n = ((dayData && dayData.oficinas)||[]).length;
       if(!n) return;
       slideIdx = (slideIdx + 1) % n;
       slideSecondsLeft = SLIDE_SECONDS;
@@ -518,29 +386,34 @@
     refresh();
   }
 
+  let lastRefreshAt = null;
   async function refresh(){
-    // os dois carregamentos são independentes -- se um falhar (rede, função fora do ar), o outro
-    // continua funcionando e mantém o último dado bom na tela até o próximo ciclo
-    await Promise.all([
-      (async () => { try{ dayData = await fetchMuralDia(date); } catch(err){ /* mantém dayData anterior */ } })(),
-      (async () => { try{ pcmData = await fetchPcmIndicadores(); } catch(err){ /* mantém pcmData anterior */ } })(),
-    ]);
+    try{ dayData = await fetchMuralDia(date); lastRefreshAt = agoraBrasilia(); }
+    catch(err){ /* falha momentânea -- mantém o último dado bom na tela, tenta de novo no próximo ciclo */ }
     secondsLeft = REFRESH_SECONDS;
+    secondsSinceRepaint = 0;
     paint();
   }
 
+  // A linha pontilhada "AGORA" e os avisos de "ocioso"/"turno ainda não começou" dependem só da hora
+  // atual, não de dado novo do Melvin -- pedido explícito do usuário pra continuarem se mexendo de
+  // minuto a minuto, mesmo com a busca de dado de verdade só acontecendo a cada 30min+ (limite que o
+  // Melvin pediu). Por isso repinta a tela de novo a cada minuto usando os MESMOS dados já buscados
+  // (sem chamada nenhuma pro Melvin), só pra reposicionar a linha do tempo.
+  let secondsSinceRepaint = 0;
   window.addEventListener("resize", fitToScreen);
   refresh();
   ticker = setInterval(() => {
     secondsLeft--;
+    secondsSinceRepaint++;
     const clockEl = document.getElementById("muralLiveClock");
-    if(clockEl) clockEl.textContent = new Date().toLocaleTimeString("pt-BR");
+    if(clockEl) clockEl.textContent = horaBrasiliaStr();
     let needRepaint = false;
-    const deckLen = buildSlideDeck().length;
-    if(slideMode && deckLen>1){
+    if(secondsSinceRepaint>=60){ secondsSinceRepaint = 0; needRepaint = true; }
+    if(slideMode && ((dayData && dayData.oficinas)||[]).length>1){
       slideSecondsLeft--;
       if(slideSecondsLeft<=0){
-        slideIdx = (slideIdx+1) % deckLen;
+        slideIdx = (slideIdx+1) % dayData.oficinas.length;
         slideSecondsLeft = SLIDE_SECONDS;
         needRepaint = true;
       }
@@ -549,9 +422,7 @@
     // de ninguém mexer, só se ninguém tiver navegado manualmente pra outro dia nesse meio tempo.
     if(followingToday && todayISO() !== date){ date = todayISO(); refresh(); return; }
     if(secondsLeft<=0){ refresh(); return; }
-    if(needRepaint){ paint(); return; }
-    const el = document.getElementById("muralCountdown");
-    if(el) el.textContent = secondsLeft; else paint();
+    if(needRepaint) paint();
   }, 1000);
 </script>
 </body>
