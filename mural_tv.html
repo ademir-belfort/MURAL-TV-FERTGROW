@@ -274,6 +274,17 @@
     return RATE_OPTIONS.map(s => `<option value="${s}" ${s===REFRESH_SECONDS?"selected":""}>${rateLabel(s)}</option>`).join("");
   }
   function horaBrasiliaHM(d){ return horaBrasiliaStr(d).slice(0,5); }
+  // O Melvin só é consultado de verdade a cada 30min (combinado com eles, sem exceção) -- isso é
+  // DIFERENTE de quanto em quanto tempo essa tela pergunta pro nosso servidor (mais rápido, 5min, pra
+  // frequência/férias/atrasadas, que não tem limite nenhum do Melvin). O horário mostrado na tela tem
+  // que ser o do MELVIN (pedido explícito do usuário: "o Melvin é o que interessa aqui"), não o do
+  // nosso servidor -- por isso lê de dayData.melvinFetchedAt (vem pronto do servidor), nunca do
+  // momento local em que ESSA tela buscou.
+  function horaBrasiliaDeIso(iso, addMs){
+    if(!iso) return null;
+    const d = new Date(new Date(iso).getTime() + (addMs||0) - 3*3600000);
+    return horaBrasiliaStr(d);
+  }
   function slideRateOptionsHTML(){
     return SLIDE_OPTIONS.map(s => `<option value="${s}" ${s===SLIDE_SECONDS?"selected":""}>${s}s</option>`).join("");
   }
@@ -314,12 +325,12 @@
                 <button class="btn ghost icon-only small" id="muralSlideNextBtn" type="button" title="Próximo setor">›</button>
               </div>` : ""}
               <div class="row-flex" style="gap:8px;align-items:center">
-                <label for="muralRefreshRate" style="font-size:11.5px;color:var(--muted)">Atualiza a cada</label>
+                <label for="muralRefreshRate" style="font-size:11.5px;color:var(--muted)">Confere nosso painel a cada</label>
                 <select id="muralRefreshRate">${rateOptionsHTML()}</select>
               </div>
               <div style="font-size:11.5px;color:var(--muted);text-align:right;line-height:1.5">
-                <div>Dados de: <b style="color:var(--text)">${lastRefreshAt ? esc(horaBrasiliaHM(lastRefreshAt)) : "—"}</b></div>
-                <div>Próxima busca: <b style="color:var(--brand-light)">${esc(horaBrasiliaHM(new Date(agoraBrasilia().getTime() + Math.max(0,secondsLeft)*1000)))}</b></div>
+                <div>Melvin consultado às: <b style="color:var(--text)">${dayData && dayData.melvinFetchedAt ? esc(horaBrasiliaDeIso(dayData.melvinFetchedAt).slice(0,5)) : "—"}</b></div>
+                <div>Próxima consulta ao Melvin: <b style="color:var(--brand-light)">${dayData && dayData.melvinFetchedAt ? esc(horaBrasiliaDeIso(dayData.melvinFetchedAt, 30*60000).slice(0,5)) : "—"}</b></div>
               </div>
             </div>
           </div>
@@ -391,9 +402,8 @@
     refresh();
   }
 
-  let lastRefreshAt = null;
   async function refresh(){
-    try{ dayData = await fetchMuralDia(date); lastRefreshAt = agoraBrasilia(); }
+    try{ dayData = await fetchMuralDia(date); }
     catch(err){ /* falha momentânea -- mantém o último dado bom na tela, tenta de novo no próximo ciclo */ }
     secondsLeft = REFRESH_SECONDS;
     secondsSinceRepaint = 0;
