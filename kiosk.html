@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Painel Fertgrow — TV</title>
+<style>
+  html,body{margin:0;height:100%;background:#0a1410;overflow:hidden;}
+  iframe{position:fixed;inset:0;width:100vw;height:100vh;border:0;}
+  #aviso{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;color:#8aa08d;font-family:-apple-system,'Segoe UI',Inter,sans-serif;font-size:18px;text-align:center;padding:40px}
+</style>
+</head>
+<body>
+<iframe id="frame" src="" title="tela atual"></iframe>
+<script>
+  // Painel "giratório" pra TV -- vai trocando de tela inteira de tempos em tempos, cada uma sendo um
+  // site separado (o Mural de HH, o painel do colega, etc). Cada site continua totalmente independente
+  // -- essa página só fica abrindo um dentro do outro (iframe) e trocando sozinha, sem mexer em nada
+  // dos sites em si. Pra adicionar, tirar ou mudar o tempo de uma tela, edita a lista abaixo e sobe o
+  // arquivo de novo no GitHub.
+  const SCREENS = [
+    { label: "Mural de HH", url: "https://ademir-belfort.github.io/MURAL-TV-FERTGROW/mural_tv.html", seconds: 120 },
+    { label: "Painel PCM", url: "https://itaneladm2011.github.io/Mural_TV/mural_tv_pcm.html", seconds: 120 },
+  ];
+
+  let idx = 0;
+  function show(){
+    const validas = SCREENS.filter(s => /^https?:\/\//.test(s.url));
+    if(!validas.length){
+      document.getElementById("frame").style.display = "none";
+      document.body.insertAdjacentHTML("beforeend", '<div id="aviso">Nenhuma tela configurada ainda -- edite a lista SCREENS em kiosk.html.</div>');
+      return;
+    }
+    const s = validas[idx % validas.length];
+    document.getElementById("frame").src = s.url;
+    document.title = s.label;
+    idx++;
+    setTimeout(show, s.seconds*1000);
+  }
+  show();
+</script>
+</body>
+</html>

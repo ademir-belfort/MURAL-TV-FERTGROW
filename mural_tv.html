@@ -139,7 +139,8 @@
     }
     const naoComecouAinda = agoraHMS!=null && f.turnoInicio && agoraHMS < f.turnoInicio;
     const ausente = !!f.ausente;
-    const ocioso = turnoIniPct!=null && blocosOrdenados.length===0 && !f.previstas.length && !naoComecouAinda && !ausente;
+    const lider = !!f.lider;
+    const ocioso = turnoIniPct!=null && blocosOrdenados.length===0 && !f.previstas.length && !naoComecouAinda && !ausente && !lider;
     const segmentsHTML = segments.map(s => {
       const bg = s.kind==="programada" ? "var(--brand-light)"
         : s.kind==="corretiva" ? "var(--cyan)"
@@ -161,9 +162,10 @@
         <div class="row-flex" style="gap:10px;align-items:center">
           <div style="width:${nameW}px;flex:0 0 auto;font-size:${nameFont};font-weight:600;display:flex;align-items:center;gap:6px">
             ${esc(f.nome)}
-            ${ausente ? `<span class="badge" style="font-size:${big?'10px':'8.5px'};background:rgba(138,148,172,.18);color:var(--muted)">AUSENTE</span>` : ""}
+            ${lider ? `<span class="badge" style="font-size:${big?'10px':'8.5px'};background:rgba(251,191,36,.18);color:var(--amber)">👑 Líder</span>` : ""}
+            ${ausente ? `<span class="badge" style="font-size:${big?'10px':'8.5px'};background:rgba(244,63,94,.18);color:var(--rose)">AUSENTE</span>` : ""}
             ${!ausente && ocioso ? `<span class="badge" style="font-size:${big?'10px':'8.5px'};background:rgba(244,63,94,.18);color:var(--rose)">OCIOSO</span>` : ""}
-            ${!ausente && naoComecouAinda ? `<span class="badge" style="font-size:${big?'10px':'8.5px'};background:rgba(255,255,255,.06);color:var(--muted)">turno às ${esc((f.turnoInicio||"").slice(0,5))}</span>` : ""}
+            ${!ausente && naoComecouAinda ? `<span class="badge" style="font-size:${big?'10px':'8.5px'};background:rgba(244,63,94,.18);color:var(--rose)">turno às ${esc((f.turnoInicio||"").slice(0,5))}</span>` : ""}
           </div>
           <div style="flex:1;position:relative;height:${rowH}px;background:var(--surface2);border-radius:5px">${segmentsHTML}</div>
         </div>
@@ -220,7 +222,8 @@
         <div class="row-flex" style="gap:5px"><span style="font-size:9.5px;padding:2px 7px;border-radius:20px;background:rgba(34,211,238,.14);color:var(--cyan);border:1px solid rgba(34,211,238,.35)">📋 OS</span>Prevista pra hoje, ainda sem apontamento</div>
         <div class="row-flex" style="gap:5px"><span style="font-size:9.5px;padding:2px 7px;border-radius:20px;background:rgba(251,113,133,.18);color:var(--rose);border:1px solid rgba(251,113,133,.35)">OS</span>Atrasada (de dia(s) anterior(es))</div>
         <div class="row-flex" style="gap:5px"><span class="badge" style="font-size:9.5px;background:rgba(244,63,94,.18);color:var(--rose)">OCIOSO</span>Escalado, turno já começou, sem nenhuma OS</div>
-        <div class="row-flex" style="gap:5px"><span class="badge" style="font-size:9.5px;background:rgba(138,148,172,.18);color:var(--muted)">AUSENTE</span>Falta lançada na frequência do dia</div>
+        <div class="row-flex" style="gap:5px"><span class="badge" style="font-size:9.5px;background:rgba(244,63,94,.18);color:var(--rose)">AUSENTE</span>Falta lançada na frequência do dia</div>
+        <div class="row-flex" style="gap:5px"><span class="badge" style="font-size:9.5px;background:rgba(251,191,36,.18);color:var(--amber)">👑 Líder</span>Líder de equipe (nunca aparece como ocioso)</div>
       </div>
     `;
   }
@@ -249,14 +252,16 @@
   // a TV ligada, troca pro novo dia automaticamente sem precisar de ninguém mexer em nada. Só para de
   // seguir "hoje" se alguém usar as setinhas pra olhar outro dia -- aí fica lá até clicar "Hoje" nenhum.
   // ---------------------------------------------------------------------------------------------
-  // O próprio Melvin confirmou: pode consultar no máximo a cada 30min -- nunca oferece nada mais
-  // rápido que isso, pra não arriscar tomar bloqueio de novo (já aconteceu uma vez por volume alto).
-  const RATE_OPTIONS = [1800, 3600, 7200];
+  // O limite de 30min do Melvin agora é garantido do lado do SERVIDOR (cache no banco, só do que vem
+  // do Melvin) -- não importa com que frequência a tela pede, o Melvin em si só é consultado a cada
+  // 30min no máximo. Isso libera pedir com mais frequência daqui (5min) sem arriscar bloqueio de novo:
+  // a frequência/férias/atrasadas (nosso próprio banco, sem limite nenhum) chegam mais rápido assim.
+  const RATE_OPTIONS = [300, 900, 1800, 3600];
   const SLIDE_OPTIONS = [8, 12, 20, 30];
   let date = todayISO();
   let followingToday = true;
   let dayData = null;
-  let REFRESH_SECONDS = 1800, secondsLeft = REFRESH_SECONDS;
+  let REFRESH_SECONDS = 300, secondsLeft = REFRESH_SECONDS;
   let slideMode = true, SLIDE_SECONDS = 12, slideSecondsLeft = SLIDE_SECONDS, slideIdx = 0;
   let ticker = null;
 
@@ -330,7 +335,7 @@
     const todayBtn = $("#todayBtn");
     if(todayBtn) todayBtn.addEventListener("click", () => { followingToday = true; date = todayISO(); refresh(); });
     $("#muralRefreshRate").addEventListener("change", e => {
-      REFRESH_SECONDS = Number(e.target.value) || 1800;
+      REFRESH_SECONDS = Number(e.target.value) || 300;
       secondsLeft = REFRESH_SECONDS;
     });
     $("#muralSlideToggle").addEventListener("change", e => {
